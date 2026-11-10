@@ -1,10 +1,12 @@
 import logging
+import os
 
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 import app_settings
+from battery_estimator import BatteryEstimator, format_duration
 from ui_components import DARK_MENU_STYLE, create_qicon, get_battery_color
 from version import __version__
 from worker import INITIAL_STATE, HeadsetWorker
@@ -17,6 +19,7 @@ SHUTDOWN_OPTIONS = (
     (45, "45 min"), (60, "1 hour"), (90, "1.5 hours"), (120, "2 hours"),
 )
 POLL_OPTIONS = ((10, "10 s"), (30, "30 s"), (60, "1 min"))
+ESTIMATE_TICK_MS = 60_000
 
 
 class HeadsetApp(QObject):
@@ -26,6 +29,7 @@ class HeadsetApp(QObject):
         super().__init__()
         self.settings = settings
         self.state = dict(INITIAL_STATE)
+        self.estimator = BatteryEstimator(os.path.join(app_settings.data_dir(), "battery.json"))
 
         self.worker = HeadsetWorker(protocol, settings.poll_interval_s)
         self.worker.state_changed.connect(self.sync_state)
@@ -39,6 +43,11 @@ class HeadsetApp(QObject):
         self.sync_state(self.state)
         self.tray.show()
         self.worker.start()
+
+        # The worker only reports changes; the estimator also needs the passage of time.
+        self.estimate_timer = QTimer(self)
+        self.estimate_timer.timeout.connect(self._refresh_estimate)
+        self.estimate_timer.start(ESTIMATE_TICK_MS)
 
     # --- menu construction ---
     @staticmethod
@@ -62,6 +71,7 @@ class HeadsetApp(QObject):
 
         self.connection_info = self._info_action(menu)
         self.battery_info = self._info_action(menu)
+        self.estimate_info = self._info_action(menu)
         self.charging_info = self._info_action(menu)
         menu.addSeparator()
 
@@ -146,6 +156,8 @@ class HeadsetApp(QObject):
         self.worker.poll_interval_s = seconds
 
     def on_quit(self):
+        self.estimate_timer.stop()
+        self.estimator.finish_session()  # keep what this session taught us
         self.worker.stop()
         if not self.worker.wait(3000):
             log.warning("Worker did not stop in time")
@@ -178,8 +190,26 @@ class HeadsetApp(QObject):
         self._check_choice(self.vol_group, state["side_tone_vol"])
         self._check_choice(self.shutdown_group, state["auto_shutdown"])
 
-        self.tray.setIcon(create_qicon(str(bat) if bat is not None else "-", get_battery_color(bat)))
-        if bat is not None:
-            self.tray.setToolTip(f"Battery level: {bat}%\nCharging status: {state['charging'] or '---'}")
-        else:
-            self.tray.setToolTip(status)
+        self.tray.setIcon(create_qicon(
+            str(bat) if bat is not None else "-", get_battery_color(bat),
+            charging=state["charging"] == "Charging", muted=connected and bool(state["muted"])))
+        self._refresh_estimate()
+
+    def _refresh_estimate(self):
+        state = self.state
+        bat, charging = state["battery"], state["charging"]
+        self.estimator.update(bat, charging, state["connected"])
+        left = format_duration(self.estimator.hours_left(bat, charging))
+        self.estimate_info.setText(f"Estimated time left: {left}" if left else "")
+        self.estimate_info.setVisible(left is not None)
+
+        if bat is None:
+            self.tray.setToolTip(self.connection_info.text())
+            return
+        lines = [f"Battery level: {bat}%"]
+        if left:
+            lines.append(f"Time left: {left}")
+        lines.append(f"Charging status: {charging or '---'}")
+        if state["muted"]:
+            lines.append("Microphone muted")
+        self.tray.setToolTip("\n".join(lines))

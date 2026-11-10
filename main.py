@@ -7,15 +7,14 @@ from logging.handlers import RotatingFileHandler
 from PyQt6.QtCore import QDir, QLockFile, QTimer
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
+import app_settings
 from version import __version__
 
 log = logging.getLogger("hyperheadset")
 
 
 def setup_logging():
-    log_dir = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "HyperHeadset")
-    os.makedirs(log_dir, exist_ok=True)
-    handlers = [RotatingFileHandler(os.path.join(log_dir, "hyperheadset.log"),
+    handlers = [RotatingFileHandler(os.path.join(app_settings.data_dir(), "hyperheadset.log"),
                                     maxBytes=512 * 1024, backupCount=2, encoding="utf-8")]
     if sys.stderr is not None:  # None in a --noconsole build
         handlers.append(logging.StreamHandler())
@@ -51,7 +50,6 @@ def main():
                              f"{e}")
         return 1
 
-    import app_settings
     from tray_app import HeadsetApp
 
     log.info("Starting HyperHeadset %s", __version__)

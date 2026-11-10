@@ -14,6 +14,13 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 POLL_INTERVALS = (10, 30, 60)
 
 
+def data_dir():
+    r"""%APPDATA%\HyperHeadset (log and battery statistics)."""
+    path = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), APP_NAME)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 class AppSettings:
     def __init__(self):
         self._s = QSettings(APP_NAME, APP_NAME)
