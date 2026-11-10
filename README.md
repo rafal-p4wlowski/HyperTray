@@ -6,7 +6,9 @@ A battery and status monitoring tool for the **HyperX Cloud III Wireless** (and 
 
 ## Features
 
-- **Battery Monitoring:** Real-time battery level displayed directly in the system tray icon (updates every 5 minutes).
+- **Battery Monitoring:** Battery level displayed directly in the system tray icon (polled every 10 seconds).
+- **Live Events:** Mute button, charger and headset power on/off are picked up immediately.
+- **Auto-Reconnect:** Recovers within seconds after the dongle is replugged or Windows resumes from sleep.
 - **Charging Status:** View whether the headset is currently charging.
 - **Microphone Control:** Toggle microphone mute status and view current state.
 - **Side Tone:** Enable/Disable side tone and adjust its volume (0, 50, 100, 200).
@@ -24,8 +26,8 @@ A battery and status monitoring tool for the **HyperX Cloud III Wireless** (and 
 
 ### Prerequisites
 
-- **Python 3.8+**
-- **hidapi libraries:** Ensure you have the necessary HIDAPI drivers installed on your system.
+- **Python 3.9+**
+- **hidapi:** `pip install hidapi` installs a prebuilt binary only for Python versions it has wheels for; on a newer Python it has to be compiled, which needs Microsoft C++ Build Tools. Alternatively install the `hid` package and put `hidapi.dll` (from [libusb/hidapi releases](https://github.com/libusb/hidapi/releases)) next to `main.py`.
 
 ### Steps
 
@@ -48,6 +50,8 @@ python main.py
 ```
 The application will appear as an icon in your system tray. Right-click the icon to access the menu and settings.
 
+A log is written to `%APPDATA%\HyperHeadset\hyperheadset.log`. Set the environment variable `HYPERHEADSET_DEBUG=1` to also log every HID report.
+
 ## Creating an Executable (.exe)
 
 To create a standalone `.exe` file for Windows:
@@ -60,13 +64,12 @@ To create a standalone `.exe` file for Windows:
    ```bash
    pyinstaller --noconsole --onefile --windowed --name "HyperHeadset" main.py
    ```
-   *(Note: The first run will generate a `dist` folder containing `HyperHeadset.exe`. Since Windows has built-in fonts, we don't need to bundle separate `.ttf` files.)*
+   *(Note: The first run will generate a `dist` folder containing `HyperHeadset.exe`.)*
 
 ## Dependencies
 
 - `hidapi`: For communication with the headset over HID.
-- `PyQt6`: For the system tray icon and native context menu.
-- `Pillow`: For dynamic generation of battery level icons.
+- `PyQt6`: For the system tray icon, the context menu and rendering the battery level icon.
 
 ## Attribution
 

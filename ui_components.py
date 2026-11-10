@@ -1,27 +1,38 @@
-import os
-from PIL import Image, ImageDraw, ImageFont
-from PyQt6.QtWidgets import QMenu
-from PyQt6.QtGui import QIcon, QPixmap, QImage
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPixmap
 
-# --- UI HELPER ---
+ICON_SIZE = 64
+
+
 def get_battery_color(level):
     if level is None: return "#9CA3AF"
     if level >= 60: return "#22C55E"
     if level >= 25: return "#F59E0B"
     return "#EF4444"
 
+
 def create_qicon(text, color_hex):
-    image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    try: font = ImageFont.truetype("arialbd.ttf", 44)
-    except: font = ImageFont.load_default()
-    bbox = draw.textbbox((0, 0), text, font=font)
-    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    draw.text(((64-w)/2, (64-h)/2 - 5), text, font=font, fill=color_hex)
-    data = image.tobytes("raw", "RGBA")
-    qim = QImage(data, image.size[0], image.size[1], QImage.Format.Format_ARGB32).copy()
-    return QIcon(QPixmap.fromImage(qim))
+    """Render `text` as a tray icon, shrinking the font so e.g. "100" fits."""
+    pixmap = QPixmap(ICON_SIZE, ICON_SIZE)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    font = QFont("Segoe UI")
+    font.setBold(True)
+    size = 48
+    while size > 12:
+        font.setPixelSize(size)
+        if QFontMetrics(font).horizontalAdvance(text) <= ICON_SIZE - 2:
+            break
+        size -= 2
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+    painter.setFont(font)
+    painter.setPen(QColor(color_hex))
+    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, text)
+    painter.end()
+    return QIcon(pixmap)
+
 
 # --- STYLESHEET ---
 DARK_MENU_STYLE = """
