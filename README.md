@@ -16,6 +16,7 @@ A battery and status monitoring tool for the **HyperX Cloud III Wireless** (and 
 - **Side Tone:** Enable/Disable side tone and adjust its volume (0, 50, 100, 200).
 - **Auto-Shutdown:** Configure automatic shutdown timer (Disabled, 5, 10, 15, 30, 45, 60, 90, or 120 minutes).
 - **Start with Windows:** Optional autostart, toggled from the Settings submenu.
+- **Pairing Reset (experimental):** *Advanced → Reset headset pairing (SIRK)* resets the pairing key after a confirmation. The headset may need to be paired with the dongle again afterwards.
 - **Single Instance:** A second copy refuses to start, so two programs never fight over the dongle.
 - **Premium UI:** Sleek, dark-themed context menu powered by PyQt6.
 - **Lightweight:** Runs silently in the background with minimal resource usage.

@@ -25,6 +25,7 @@ MAX_REPORTS_PER_READ = 64  # upper bound, so a chatty device can't stall the loo
 
 # Queries
 CMD_GET_WIRELESS_STATUS = 0x82
+CMD_GET_SIRK            = 0x83  # pairing key (SIRK = Set Identity Resolving Key)
 CMD_GET_SIDE_TONE       = 0x84
 CMD_GET_AUTO_SHUTDOWN   = 0x85
 CMD_GET_MUTE            = 0x86
@@ -37,6 +38,7 @@ CMD_SET_SIDE_TONE       = 0x01
 CMD_SET_AUTO_SHUTDOWN   = 0x02
 CMD_SET_MUTE            = 0x03
 CMD_SET_SIDE_TONE_VOL   = 0x05
+CMD_RESET_SIRK          = 0x1E  # resets the pairing key; may unpair headset and dongle
 
 # Unsolicited events
 EVT_MUTE            = 0x0A
@@ -56,6 +58,7 @@ FULL_REFRESH_QUERIES = (
     CMD_GET_MUTE,
     CMD_GET_SIDE_TONE,
     CMD_GET_SIDE_TONE_VOL,
+    CMD_GET_SIRK,
 )
 
 # setting name -> (set command, query that reads the value back)
@@ -92,6 +95,9 @@ def parse_report(report):
         return {"side_tone": a == 1}
     if cmd == CMD_GET_SIDE_TONE_VOL:
         return {"side_tone_vol": a}
+    if cmd == CMD_GET_SIRK:
+        # The original project treats any non-zero byte here as "SIRK reset required".
+        return {"sirk_reset_required": any(report[2:18])}
 
     log.debug("Unhandled report: %s", " ".join(f"{x:02X}" for x in report[:8]))
     return {}
@@ -220,6 +226,13 @@ class Headset:
         self.send(set_cmd, int(value))
         time.sleep(RESPONSE_DELAY)
         return self.query(get_cmd)
+
+    def reset_sirk(self):
+        """Reset the pairing key and return the updates read back."""
+        log.warning("Sending SIRK reset")
+        self.send(CMD_RESET_SIRK)
+        time.sleep(RESPONSE_DELAY)
+        return self.query(CMD_GET_SIRK)
 
     def close(self):
         self._t.close()

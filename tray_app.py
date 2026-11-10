@@ -3,7 +3,7 @@ import os
 
 from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtGui import QAction, QActionGroup
-from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PyQt6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 import app_settings
 from battery_estimator import BatteryEstimator, format_duration
@@ -92,6 +92,7 @@ class HeadsetApp(QObject):
         menu.addSeparator()
 
         self._build_settings_menu(menu)
+        self._build_advanced_menu(menu)
         menu.addSeparator()
 
         quit_act = QAction("Quit", menu)
@@ -116,6 +117,14 @@ class HeadsetApp(QObject):
 
         sub.addSeparator()
         self._info_action(sub, f"Version {__version__}")
+
+    def _build_advanced_menu(self, parent):
+        self.advanced_menu = parent.addMenu("Advanced")
+        self.advanced_menu.setStyleSheet(DARK_MENU_STYLE)
+        self.sirk_info = self._info_action(self.advanced_menu)
+        self.sirk_reset_act = QAction("Reset headset pairing (SIRK)...", self.advanced_menu)
+        self.sirk_reset_act.triggered.connect(self.on_reset_sirk)
+        self.advanced_menu.addAction(self.sirk_reset_act)
 
     def _choice_menu(self, parent, title, options, handler):
         sub = parent.addMenu(title)
@@ -151,6 +160,19 @@ class HeadsetApp(QObject):
             log.error("Cannot change autostart: %s", e)
         self.autostart_act.setChecked(app_settings.is_autostart_enabled())
 
+    def on_reset_sirk(self):
+        answer = QMessageBox.warning(
+            None, "Reset headset pairing",
+            "This resets the pairing key (SIRK) shared by the headset and the dongle.\n\n"
+            "The headset may disconnect from the dongle. If it does not reconnect, pair it "
+            "again following the headset manual.\n\n"
+            "This feature is experimental. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer == QMessageBox.StandardButton.Yes:
+            log.info("User confirmed SIRK reset")
+            self.worker.submit("reset_sirk", None)
+
     def on_poll_interval(self, seconds):
         self.settings.poll_interval_s = seconds
         self.worker.poll_interval_s = seconds
@@ -184,6 +206,10 @@ class HeadsetApp(QObject):
             act.setEnabled(connected)
         self.vol_menu.setEnabled(connected)
         self.shutdown_menu.setEnabled(connected)
+
+        sirk = state["sirk_reset_required"]
+        self.sirk_info.setText("Pairing reset required: " + ("---" if sirk is None else "Yes" if sirk else "No"))
+        self.sirk_reset_act.setEnabled(connected)
 
         self.mute_act.setChecked(bool(state["muted"]))
         self.side_tone_act.setChecked(bool(state["side_tone"]))

@@ -20,6 +20,7 @@ INITIAL_STATE = {
     "side_tone": None,
     "side_tone_vol": None,
     "auto_shutdown": None,
+    "sirk_reset_required": None,
 }
 
 
@@ -113,6 +114,10 @@ class HeadsetWorker(QThread):
                 setting, value = self._commands.get_nowait()
             except queue.Empty:
                 return
+            if setting == "reset_sirk":
+                self._apply(headset.reset_sirk())
+                log.info("SIRK reset done, reset required now: %s", self.state["sirk_reset_required"])
+                continue
             log.info("Setting %s = %s", setting, value)
             self._apply(headset.apply_setting(setting, value))
 
@@ -139,6 +144,8 @@ class HeadsetWorker(QThread):
             new["battery"] = None
             new["charging"] = None
         if new != self.state:
+            if new["sirk_reset_required"] != self.state["sirk_reset_required"] and new["sirk_reset_required"] is not None:
+                log.info("Pairing key (SIRK) reset required: %s", new["sirk_reset_required"])
             if new["connected"] != self.state["connected"]:
                 log.info("Headset %s", "connected" if new["connected"] else "disconnected")
                 # The connect event may arrive in any read (also inside a query),
