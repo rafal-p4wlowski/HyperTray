@@ -18,7 +18,6 @@ SHUTDOWN_OPTIONS = (
     (0, "Disabled"), (5, "5 min"), (10, "10 min"), (15, "15 min"), (30, "30 min"),
     (45, "45 min"), (60, "1 hour"), (90, "1.5 hours"), (120, "2 hours"),
 )
-POLL_OPTIONS = ((10, "10 s"), (30, "30 s"), (60, "1 min"))
 ESTIMATE_TICK_MS = 60_000
 
 
@@ -112,7 +111,8 @@ class HeadsetApp(QObject):
             lambda checked: setattr(self.settings, "left_click_mute", checked))
         self.left_click_act.setChecked(self.settings.left_click_mute)
 
-        _, self.poll_group = self._choice_menu(sub, "Battery refresh", POLL_OPTIONS, self.on_poll_interval)
+        _, self.poll_group = self._choice_menu(
+            sub, "Battery refresh", app_settings.POLL_OPTIONS, self.on_poll_interval)
         self._check_choice(self.poll_group, self.settings.poll_interval_s)
 
         sub.addSeparator()
@@ -141,10 +141,16 @@ class HeadsetApp(QObject):
 
     @staticmethod
     def _check_choice(group, value):
-        # Exclusive groups can't be fully unchecked, so relax it for unknown values.
+        match = next((act for act in group.actions() if act.data() == value), None)
+        if match is not None:
+            # Checking inside the exclusive group lets Qt uncheck the previous
+            # choice and keeps its notion of the current action up to date.
+            match.setChecked(True)
+            return
+        # Unknown value: exclusive groups can't be fully unchecked, so relax it briefly.
         group.setExclusive(False)
         for act in group.actions():
-            act.setChecked(act.data() == value)
+            act.setChecked(False)
         group.setExclusive(True)
 
     # --- handlers ---

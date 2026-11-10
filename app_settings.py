@@ -11,7 +11,14 @@ log = logging.getLogger(__name__)
 
 APP_NAME = "HyperHeadset"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-POLL_INTERVALS = (10, 30, 60)
+# Battery refresh choices: (seconds, menu label). The original project polls
+# every 3 s, so 5 s is still safe for the dongle.
+POLL_OPTIONS = (
+    (5, "5 s"), (10, "10 s"), (30, "30 s"), (60, "1 min"),
+    (120, "2 min"), (300, "5 min"), (600, "10 min"),
+)
+POLL_INTERVALS = tuple(seconds for seconds, _ in POLL_OPTIONS)
+DEFAULT_POLL_INTERVAL = 10
 
 
 def data_dir():
@@ -35,8 +42,8 @@ class AppSettings:
 
     @property
     def poll_interval_s(self):
-        value = self._s.value("poll_interval_s", POLL_INTERVALS[0], type=int)
-        return value if value in POLL_INTERVALS else POLL_INTERVALS[0]
+        value = self._s.value("poll_interval_s", DEFAULT_POLL_INTERVAL, type=int)
+        return value if value in POLL_INTERVALS else DEFAULT_POLL_INTERVAL
 
     @poll_interval_s.setter
     def poll_interval_s(self, value):
