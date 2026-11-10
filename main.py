@@ -5,6 +5,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 
 from PyQt6.QtCore import QDir, QLockFile, QTimer
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 import app_settings
@@ -30,6 +31,9 @@ def main():
     setup_logging()
     app = QApplication(sys.argv)
     app.setApplicationName("HyperHeadset")
+    # In a PyInstaller build data files live under sys._MEIPASS.
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    app.setWindowIcon(QIcon(os.path.join(base, "assets", "icon.ico")))
     app.setQuitOnLastWindowClosed(False)
 
     # Two instances would fight over the dongle.
