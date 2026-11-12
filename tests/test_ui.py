@@ -18,10 +18,19 @@ def test_battery_colors_are_not_swapped(qapp, level, color):
     assert color in solid_colors(create_qicon("88", get_battery_color(level)))
 
 
-def test_badges(qapp):
-    assert "#facc15" in solid_colors(create_qicon("50", "#22C55E", charging=True))
-    assert "#ef4444" in solid_colors(create_qicon("50", "#22C55E", muted=True))
-    assert "#facc15" not in solid_colors(create_qicon("50", "#22C55E"))
+GREEN, YELLOW, RED = "#22c55e", "#facc15", "#ef4444"
+
+
+@pytest.mark.parametrize("charging, muted, present, absent", [
+    (False, False, {GREEN}, {YELLOW, RED}),        # digits
+    (True, False, {YELLOW}, {GREEN, RED}),         # bolt replaces the digits
+    (False, True, {RED}, {GREEN, YELLOW}),         # crossed-out mic replaces the digits
+    (True, True, {RED}, {GREEN, YELLOW}),          # muted takes precedence over charging
+])
+def test_status_symbol_replaces_digits(qapp, charging, muted, present, absent):
+    colors = solid_colors(create_qicon("50", "#22C55E", charging=charging, muted=muted))
+    assert present <= colors
+    assert not (absent & colors)
 
 
 def make_group(values):

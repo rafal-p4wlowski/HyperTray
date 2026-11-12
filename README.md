@@ -7,7 +7,7 @@ A battery and status monitoring tool for the **HyperX Cloud III Wireless** (and 
 ## Features
 
 - **Battery Monitoring:** Battery level displayed directly in the system tray icon (refresh interval from 5 s to 10 min, default 10 s).
-- **Status Badges:** The tray icon shows a lightning bolt while charging and a red badge while the microphone is muted.
+- **Status Symbols:** While the microphone is muted the tray icon shows a crossed-out microphone instead of the battery level, and a lightning bolt while charging (mute takes precedence).
 - **Time Left:** Estimates the remaining battery time from how fast the battery drains, and learns the rate across sessions.
 - **Live Events:** Mute button, charger and headset power on/off are picked up immediately.
 - **Auto-Reconnect:** Recovers within seconds after the dongle is replugged or Windows resumes from sleep.
