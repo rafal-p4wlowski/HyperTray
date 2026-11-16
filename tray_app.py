@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 import app_settings
 from battery_estimator import BatteryEstimator, format_duration
-from ui_components import DARK_MENU_STYLE, create_qicon, get_battery_color
+from ui_components import DARK_MENU_STYLE, create_tray_icon, taskbar_is_light
 from version import __version__
 from worker import INITIAL_STATE, HeadsetWorker
 
@@ -19,6 +19,7 @@ SHUTDOWN_OPTIONS = (
     (45, "45 min"), (60, "1 hour"), (90, "1.5 hours"), (120, "2 hours"),
 )
 ESTIMATE_TICK_MS = 60_000
+THEME_CHECK_MS = 2000        # how often to check whether the taskbar switched light/dark
 
 
 class HeadsetApp(QObject):
@@ -34,7 +35,7 @@ class HeadsetApp(QObject):
         self.worker.state_changed.connect(self.sync_state)
 
         self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(create_qicon("...", get_battery_color(None)))
+        self._light_taskbar = taskbar_is_light()
         self.tray.setToolTip("Looking for headset...")
         self.tray.activated.connect(self.on_tray_activated)
         self.menu = self._build_menu()
@@ -47,6 +48,11 @@ class HeadsetApp(QObject):
         self.estimate_timer = QTimer(self)
         self.estimate_timer.timeout.connect(self._refresh_estimate)
         self.estimate_timer.start(ESTIMATE_TICK_MS)
+
+        # The ring and glyph follow the taskbar colour, which can change at any time.
+        self.theme_timer = QTimer(self)
+        self.theme_timer.timeout.connect(self._check_taskbar_theme)
+        self.theme_timer.start(THEME_CHECK_MS)
 
     # --- menu construction ---
     @staticmethod
@@ -222,10 +228,21 @@ class HeadsetApp(QObject):
         self._check_choice(self.vol_group, state["side_tone_vol"])
         self._check_choice(self.shutdown_group, state["auto_shutdown"])
 
-        self.tray.setIcon(create_qicon(
-            str(bat) if bat is not None else "-", get_battery_color(bat),
-            charging=state["charging"] == "Charging", muted=connected and bool(state["muted"])))
+        self._update_icon()
         self._refresh_estimate()
+
+    def _update_icon(self):
+        state = self.state
+        connected = state["connected"]
+        self.tray.setIcon(create_tray_icon(
+            state["battery"], charging=state["charging"] == "Charging", active=connected,
+            light_taskbar=self._light_taskbar, muted=connected and bool(state["muted"])))
+
+    def _check_taskbar_theme(self):
+        light = taskbar_is_light()
+        if light != self._light_taskbar:
+            self._light_taskbar = light
+            self._update_icon()
 
     def _refresh_estimate(self):
         state = self.state

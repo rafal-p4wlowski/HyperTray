@@ -8,8 +8,8 @@ Formerly *HyperHeadset_PY*. Settings, battery statistics and the autostart entry
 
 ## Features
 
-- **Battery Monitoring:** Battery level displayed directly in the system tray icon (refresh interval from 5 s to 10 min, default 10 s).
-- **Status Symbols:** While the microphone is muted the tray icon shows a crossed-out microphone instead of the battery level, and a lightning bolt while charging (mute takes precedence).
+- **Battery Monitoring:** A ring around a headphones glyph fills clockwise with the battery level. It follows the taskbar colour (white on dark, black on light) and turns amber at 30% and red at 20%. The exact level is in the tooltip. Refresh interval from 5 s to 10 min, default 10 s.
+- **Status Symbols:** While the microphone is muted a red crossed-out microphone replaces the headphones. While charging the ring turns green. When the headset is off the icon is dimmed.
 - **Time Left:** Estimates the remaining battery time from how fast the battery drains, and learns the rate across sessions.
 - **Live Events:** Mute button, charger and headset power on/off are picked up immediately.
 - **Auto-Reconnect:** Recovers within seconds after the dongle is replugged or Windows resumes from sleep.
@@ -105,6 +105,11 @@ GitHub Actions runs them on every push to `main` and on pull requests.
 The HID communication logic and protocol identifiers were implemented based on the original project by **Lennard Kittner**:
 - **Original Repository:** [HyperHeadset](https://github.com/LennardKittner/HyperHeadset)
 - **License:** MIT
+
+## Credits
+
+- Tray icon presentation (battery ring around a device glyph) after [HaloBattery](https://github.com/HeyOkay/HaloBattery) by HeyOkay (MIT).
+- Headphones and mic-off glyphs from [Lucide](https://lucide.dev/) 1.17.0 (ISC, includes Feather's MIT notice), redrawn as Qt paths. License text: [licenses/lucide-1.17.0-LICENSE.txt](licenses/lucide-1.17.0-LICENSE.txt).
 
 ## License
 

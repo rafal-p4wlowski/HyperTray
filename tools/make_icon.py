@@ -1,19 +1,23 @@
-"""Generate assets/icon.ico (application icon: a pair of headphones).
+r"""Generate assets/icon.ico (application icon: a pair of headphones in a full green battery ring).
 
-Run from the project root:  .venv\\Scripts\\python tools\\make_icon.py
-Each size is drawn separately (thicker strokes for small sizes) and stored as
-a PNG entry in the .ico container.
+The same artwork as the tray icon (ui_components), on a dark disc so it reads on
+light and dark Explorer backgrounds alike.
+Run from the project root:  .venv\Scripts\python tools\make_icon.py
+Each size is drawn separately and stored as a PNG entry in the .ico container.
 """
 import os
 import struct
 import sys
 
 from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, Qt
-from PyQt6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QGuiApplication, QImage, QPainter
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+import ui_components  # noqa: E402
 
 SIZES = (16, 24, 32, 48, 64, 128, 256)
 BACKGROUND = QColor("#1E1E1E")
-ACCENT = QColor("#22C55E")
 
 
 def draw(size):
@@ -21,27 +25,12 @@ def draw(size):
     img.fill(Qt.GlobalColor.transparent)
     p = QPainter(img)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.scale(size / 64, size / 64)
-
-    # rounded square background
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(BACKGROUND)
-    p.drawRoundedRect(QRectF(1, 1, 62, 62), 14, 14)
-
-    # headband
-    band = 7 if size <= 24 else 5.5
-    p.setPen(QPen(ACCENT, band, cap=Qt.PenCapStyle.RoundCap))
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    path = QPainterPath()
-    path.moveTo(14, 38)
-    path.arcTo(QRectF(14, 11, 36, 40), 180, -180)
-    p.drawPath(path)
-
-    # ear cups
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(ACCENT)
-    p.drawRoundedRect(QRectF(8, 33, 14, 22), 5, 5)
-    p.drawRoundedRect(QRectF(42, 33, 14, 22), 5, 5)
+    inset = size / 64          # keep the disc edge under the ring
+    p.drawEllipse(QRectF(inset, inset, size - 2 * inset, size - 2 * inset))
+    # full, charging-green ring with the white glyph of a dark taskbar
+    p.drawPixmap(0, 0, ui_components.render_icon(size, 100, charging=True, light_taskbar=False))
     p.end()
     return img
 
@@ -70,8 +59,7 @@ def write_ico(path, images):
 
 def main():
     app = QGuiApplication(sys.argv)  # noqa: F841 (needed for QPainter)
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    out = os.path.join(root, "assets", "icon.ico")
+    out = os.path.join(ROOT, "assets", "icon.ico")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     write_ico(out, [draw(s) for s in SIZES])
     print("written", out)

@@ -1,36 +1,69 @@
 import pytest
-from PyQt6.QtGui import QAction, QActionGroup
+from PyQt6.QtGui import QAction, QActionGroup, QColor
 from PyQt6.QtWidgets import QMenu
 
+import ui_components as ui
 from tray_app import HeadsetApp
-from ui_components import create_qicon, get_battery_color
 
 
-def solid_colors(icon):
-    img = icon.pixmap(64, 64).toImage()
-    return {img.pixelColor(x, y).name() for x in range(64) for y in range(64)
+def solid_colors(pixmap):
+    """Fully opaque colours: the coloured arc and the muted mic (neutral ink is 90% opaque)."""
+    img = pixmap.toImage()
+    return {img.pixelColor(x, y).name() for x in range(img.width()) for y in range(img.height())
             if img.pixelColor(x, y).alpha() == 255}
 
 
-@pytest.mark.parametrize("level, color", [(None, "#9ca3af"), (80, "#22c55e"), (42, "#f59e0b"), (10, "#ef4444")])
-def test_battery_colors_are_not_swapped(qapp, level, color):
-    assert get_battery_color(level).lower() == color
-    assert color in solid_colors(create_qicon("88", get_battery_color(level)))
+def max_alpha(pixmap):
+    img = pixmap.toImage()
+    return max(img.pixelColor(x, y).alpha() for x in range(img.width()) for y in range(img.height()))
 
 
-GREEN, YELLOW, RED = "#22c55e", "#facc15", "#ef4444"
+RED, AMBER, GREEN = (c.name() for c in (ui.RED, ui.AMBER, ui.GREEN))
+WHITE = QColor(255, 255, 255)
 
 
-@pytest.mark.parametrize("charging, muted, present, absent", [
-    (False, False, {GREEN}, {YELLOW, RED}),        # digits
-    (True, False, {YELLOW}, {GREEN, RED}),         # bolt replaces the digits
-    (False, True, {RED}, {GREEN, YELLOW}),         # crossed-out mic replaces the digits
-    (True, True, {RED}, {GREEN, YELLOW}),          # muted takes precedence over charging
+@pytest.mark.parametrize("level, charging, low, expected", [
+    (80, False, 15, WHITE), (26, False, 15, WHITE), (25, False, 15, ui.AMBER), (15, False, 15, ui.RED),
+    (5, True, 15, ui.GREEN), (100, True, 15, ui.GREEN),
+    (11, False, 0, ui.AMBER), (10, False, 0, ui.RED),       # threshold never below 10
 ])
-def test_status_symbol_replaces_digits(qapp, charging, muted, present, absent):
-    colors = solid_colors(create_qicon("50", "#22C55E", charging=charging, muted=muted))
-    assert present <= colors
-    assert not (absent & colors)
+def test_arc_color(level, charging, low, expected):
+    assert ui.arc_color(level, charging, low, WHITE) == expected
+
+
+@pytest.mark.parametrize("kwargs, colors", [
+    (dict(level=80), set()),
+    (dict(level=22), {AMBER}),
+    (dict(level=8), {RED}),
+    (dict(level=40, charging=True), {GREEN}),
+    (dict(level=8, active=False), set()),                   # asleep: no arc at all
+    (dict(level=None), set()),
+])
+def test_ring_colors(qapp, kwargs, colors):
+    assert solid_colors(ui.render_icon(64, low=15, **kwargs)) == colors
+
+
+def test_inactive_icon_is_translucent(qapp):
+    assert max_alpha(ui.render_icon(64, 60)) > 200
+    assert max_alpha(ui.render_icon(64, 60, active=False)) < 128
+    assert max_alpha(ui.render_icon(64, None)) < 128
+
+
+@pytest.mark.parametrize("light, ink", [(False, "#ffffff"), (True, "#000000")])
+def test_ink_follows_taskbar(qapp, light, ink):
+    img = ui.render_icon(64, 100, light_taskbar=light).toImage()
+    inks = {img.pixelColor(x, y).name() for x in range(64) for y in range(64) if img.pixelColor(x, y).alpha() > 200}
+    assert inks == {ink}
+
+
+def test_icon_has_every_tray_size(qapp):
+    icon = ui.create_tray_icon(50, light_taskbar=False)
+    assert {s.width() for s in icon.availableSizes()} == set(ui.ICON_SIZES)
+
+
+def test_muted_mic_replaces_headphones(qapp):
+    assert RED in solid_colors(ui.render_icon(64, 80, muted=True))
+    assert GREEN in solid_colors(ui.render_icon(64, 80, charging=True, muted=True))   # the ring still shows charging
 
 
 def make_group(values):
