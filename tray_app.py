@@ -11,7 +11,7 @@ from ui_components import DARK_MENU_STYLE, create_qicon, get_battery_color
 from version import __version__
 from worker import INITIAL_STATE, HeadsetWorker
 
-log = logging.getLogger("hyperheadset")
+log = logging.getLogger("hypertray")
 
 SIDE_TONE_VOLUMES = (0, 50, 100, 200)
 SHUTDOWN_OPTIONS = (

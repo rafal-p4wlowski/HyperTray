@@ -1,4 +1,4 @@
-# PyInstaller build:  .venv\Scripts\pyinstaller --noconfirm HyperHeadset.spec
+# PyInstaller build:  .venv\Scripts\pyinstaller --noconfirm HyperTray.spec
 import os
 import re
 
@@ -48,11 +48,11 @@ version_info = VSVersionInfo(
     ffi=FixedFileInfo(filevers=VERSION_TUPLE, prodvers=VERSION_TUPLE),
     kids=[
         StringFileInfo([StringTable("040904B0", [
-            StringStruct("FileDescription", "HyperHeadset tray monitor"),
-            StringStruct("ProductName", "HyperHeadset"),
+            StringStruct("FileDescription", "HyperTray headset tray monitor"),
+            StringStruct("ProductName", "HyperTray"),
             StringStruct("FileVersion", VERSION),
             StringStruct("ProductVersion", VERSION),
-            StringStruct("OriginalFilename", "HyperHeadset.exe"),
+            StringStruct("OriginalFilename", "HyperTray.exe"),
             StringStruct("LegalCopyright", "MIT License"),
         ])]),
         VarFileInfo([VarStruct("Translation", [0x0409, 1200])]),
@@ -65,7 +65,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="HyperHeadset",
+    name="HyperTray",
     console=False,
     icon=os.path.join(ROOT, "assets", "icon.ico"),
     version=version_info,

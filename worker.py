@@ -5,7 +5,7 @@ import time
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-log = logging.getLogger("hyperheadset")
+log = logging.getLogger("hypertray")
 
 LISTEN_MS = 300            # how long each loop iteration waits for headset events
 FULL_REFRESH_S = 180       # querying everything too often destabilises the dongle

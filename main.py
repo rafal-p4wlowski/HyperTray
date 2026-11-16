@@ -11,16 +11,16 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 import app_settings
 from version import __version__
 
-log = logging.getLogger("hyperheadset")
+log = logging.getLogger("hypertray")
 
 
 def setup_logging():
-    handlers = [RotatingFileHandler(os.path.join(app_settings.data_dir(), "hyperheadset.log"),
+    handlers = [RotatingFileHandler(os.path.join(app_settings.data_dir(), "hypertray.log"),
                                     maxBytes=512 * 1024, backupCount=2, encoding="utf-8")]
     if sys.stderr is not None:  # None in a --noconsole build
         handlers.append(logging.StreamHandler())
     logging.basicConfig(
-        level=logging.DEBUG if os.environ.get("HYPERHEADSET_DEBUG") else logging.INFO,
+        level=logging.DEBUG if os.environ.get("HYPERTRAY_DEBUG") else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=handlers,
     )
@@ -30,17 +30,17 @@ def setup_logging():
 def main():
     setup_logging()
     app = QApplication(sys.argv)
-    app.setApplicationName("HyperHeadset")
+    app.setApplicationName("HyperTray")
     # In a PyInstaller build data files live under sys._MEIPASS.
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     app.setWindowIcon(QIcon(os.path.join(base, "assets", "icon.ico")))
     app.setQuitOnLastWindowClosed(False)
 
     # Two instances would fight over the dongle.
-    lock = QLockFile(os.path.join(QDir.tempPath(), "HyperHeadset.lock"))
+    lock = QLockFile(os.path.join(QDir.tempPath(), "HyperTray.lock"))
     if not lock.tryLock(100):
         log.info("Another instance is already running, exiting")
-        QMessageBox.information(None, "HyperHeadset", "HyperHeadset is already running.\n"
+        QMessageBox.information(None, "HyperTray", "HyperTray is already running.\n"
                                 "Look for its icon in the system tray.")
         return 0
 
@@ -48,7 +48,7 @@ def main():
         import headset_logic
     except ImportError as e:
         log.critical("No HID backend available: %s", e)
-        QMessageBox.critical(None, "HyperHeadset",
+        QMessageBox.critical(None, "HyperTray",
                              "Cannot load the HID library.\n\nInstall 'hidapi' "
                              "(pip install hidapi), or the 'hid' package together with hidapi.dll.\n\n"
                              f"{e}")
@@ -56,7 +56,11 @@ def main():
 
     from tray_app import HeadsetApp
 
-    log.info("Starting HyperHeadset %s", __version__)
+    log.info("Starting HyperTray %s", __version__)
+    try:
+        app_settings.migrate_legacy()
+    except OSError as e:
+        log.warning("Cannot migrate settings of the old version: %s", e)
     try:
         app_settings.refresh_autostart()
     except OSError as e:
