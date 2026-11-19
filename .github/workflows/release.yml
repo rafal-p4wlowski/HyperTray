@@ -1,6 +1,6 @@
 name: Release
 
-# - Push a tag like v2.1.0 (matching version.py): build HyperTray.exe and
+# - Push a tag like v2.2.0 (matching version.py): build HyperTray.exe and
 #   publish it as a GitHub release.
 # - "Run workflow" button (workflow_dispatch): test build only; the exe is
 #   attached to the run as a downloadable artifact, nothing is published.
