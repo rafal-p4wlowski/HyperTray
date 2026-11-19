@@ -61,6 +61,7 @@ def main():
         app_settings.migrate_legacy()
     except OSError as e:
         log.warning("Cannot migrate settings of the old version: %s", e)
+    app_settings.migrate_settings()
     try:
         app_settings.refresh_autostart()
     except OSError as e:

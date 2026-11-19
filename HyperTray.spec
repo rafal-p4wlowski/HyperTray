@@ -11,10 +11,15 @@ with open(os.path.join(ROOT, "version.py"), encoding="utf-8") as f:
     VERSION = re.search(r'__version__\s*=\s*"([^"]+)"', f.read()).group(1)
 VERSION_TUPLE = tuple((list(map(int, VERSION.split("."))) + [0, 0, 0, 0])[:4])
 
-# Python modules the app never imports.
+# Python modules the app never imports. The second group is only imported
+# inside functions the app never calls.
 EXCLUDED_MODULES = [
     "tkinter", "unittest", "pydoc", "ssl", "_ssl", "_hashlib", "PyQt6.QtNetwork", "PyQt6.QtQml", "PyQt6.QtQuick",
     "PyQt6.QtPdf", "PyQt6.QtOpenGL", "PyQt6.QtOpenGLWidgets", "PyQt6.QtSvg", "PyQt6.QtDBus",
+    "multiprocessing", "concurrent", "email", "xml", "xmlrpc", "pyexpat", "urllib", "http", "html",
+    "decimal", "_decimal", "_pydecimal", "fractions", "csv", "ftplib", "bz2", "_bz2", "lzma", "_lzma",
+    "unicodedata", "stringprep", "tarfile", "gzip", "smtplib", "argparse", "gettext", "tracemalloc",
+    "subprocess", "_strptime", "calendar",
 ]
 # Qt files pulled in by the PyQt6 hooks that a tray app does not need.
 # opengl32sw.dll alone is ~20 MB (software OpenGL fallback).
@@ -22,6 +27,9 @@ EXCLUDED_FILES = (
     "opengl32sw", "d3dcompiler", "qt6quick", "qt6qml", "qt6pdf", "qt6network",
     "qt6opengl", "qt6svg", "qt6virtualkeyboard", "qt6dbus", "/translations/",
     "libcrypto", "libssl",  # no network access; hashlib falls back to built-ins
+    "qoffscreen", "qminimal", "qdirect2d", "/generic/", "/iconengines/",  # only the Windows platform is used
+    "qt6/bin/vcruntime140",  # second copy; python313.dll already loads the one in the root
+    "ucrtbase", "api-ms-win-",  # Universal CRT: part of Windows 10/11, bundled only on CI runners
 )
 KEEP_IMAGE_FORMATS = ("qico",)  # only the .ico loader is used
 
@@ -38,6 +46,7 @@ a = Analysis(
     pathex=[ROOT],
     datas=[("assets/icon.ico", "assets")],
     excludes=EXCLUDED_MODULES,
+    optimize=2,  # no docstrings or asserts in the bundled bytecode
 )
 a.binaries = [b for b in a.binaries if keep(b)]
 a.datas = [d for d in a.datas if keep(d)]

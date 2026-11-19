@@ -1,25 +1,35 @@
+import ctypes
 import logging
 import os
+import sys
 
 from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtGui import QAction, QActionGroup
-from PyQt6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
+from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 import app_settings
-from battery_estimator import BatteryEstimator, format_duration
+import i18n
+from battery_estimator import BatteryEstimator, BatteryHistory, format_duration
+from i18n import tr
 from ui_components import DARK_MENU_STYLE, create_tray_icon, taskbar_is_light
 from version import __version__
 from worker import INITIAL_STATE, HeadsetWorker
 
 log = logging.getLogger("hypertray")
 
-SIDE_TONE_VOLUMES = (0, 50, 100, 200)
-SHUTDOWN_OPTIONS = (
-    (0, "Disabled"), (5, "5 min"), (10, "10 min"), (15, "15 min"), (30, "30 min"),
-    (45, "45 min"), (60, "1 hour"), (90, "1.5 hours"), (120, "2 hours"),
-)
 ESTIMATE_TICK_MS = 60_000
 THEME_CHECK_MS = 2000        # how often to check whether the taskbar switched light/dark
+TRIM_DELAY_MS = 5000         # after the start and after the panel was closed
+
+
+def release_unused_memory():
+    """Hand the pages not used lately back to Windows. A tray app sits idle
+    almost all the time; the pages come back cheaply when they are needed."""
+    if sys.platform == "win32":
+        k32 = ctypes.windll.kernel32
+        k32.GetCurrentProcess.restype = ctypes.c_void_p
+        k32.K32EmptyWorkingSet.argtypes = [ctypes.c_void_p]
+        k32.K32EmptyWorkingSet(k32.GetCurrentProcess())
 
 
 class HeadsetApp(QObject):
@@ -29,20 +39,24 @@ class HeadsetApp(QObject):
         super().__init__()
         self.settings = settings
         self.state = dict(INITIAL_STATE)
+        self.panel = None            # HeadsetPanel, created on first use
+        i18n.set_language(settings.language)
         self.estimator = BatteryEstimator(os.path.join(app_settings.data_dir(), "battery.json"))
+        self.history = BatteryHistory(os.path.join(app_settings.data_dir(), "battery_history.json"))
 
         self.worker = HeadsetWorker(protocol, settings.poll_interval_s)
         self.worker.state_changed.connect(self.sync_state)
 
         self.tray = QSystemTrayIcon(self)
         self._light_taskbar = taskbar_is_light()
-        self.tray.setToolTip("Looking for headset...")
+        self.tray.setToolTip(tr("Looking for headset..."))
         self.tray.activated.connect(self.on_tray_activated)
         self.menu = self._build_menu()
         self.tray.setContextMenu(self.menu)
         self.sync_state(self.state)
         self.tray.show()
         self.worker.start()
+        QTimer.singleShot(TRIM_DELAY_MS, release_unused_memory)
 
         # The worker only reports changes; the estimator also needs the passage of time.
         self.estimate_timer = QTimer(self)
@@ -81,56 +95,41 @@ class HeadsetApp(QObject):
         menu.addSeparator()
 
         self.mute_act = self._toggle_action(
-            menu, "Microphone muted", lambda checked: self.worker.submit("muted", checked))
-        menu.addSeparator()
-
-        self.side_tone_act = self._toggle_action(
-            menu, "Side tone", lambda checked: self.worker.submit("side_tone", checked))
-        self.vol_menu, self.vol_group = self._choice_menu(
-            menu, "Side tone volume", [(v, str(v)) for v in SIDE_TONE_VOLUMES],
-            lambda v: self.worker.submit("side_tone_vol", v))
-        menu.addSeparator()
-
-        self.shutdown_menu, self.shutdown_group = self._choice_menu(
-            menu, "Automatic shutdown", SHUTDOWN_OPTIONS,
-            lambda v: self.worker.submit("auto_shutdown", v))
+            menu, tr("Microphone muted"), lambda checked: self.worker.submit("muted", checked))
+        panel_act = QAction(tr("Headset panel..."), menu)
+        panel_act.triggered.connect(self.show_panel)
+        font = panel_act.font()
+        font.setBold(True)
+        panel_act.setFont(font)
+        menu.addAction(panel_act)
+        menu.setDefaultAction(panel_act)
         menu.addSeparator()
 
         self._build_settings_menu(menu)
-        self._build_advanced_menu(menu)
         menu.addSeparator()
 
-        quit_act = QAction("Quit", menu)
+        quit_act = QAction(tr("Quit"), menu)
         quit_act.triggered.connect(self.on_quit)
         menu.addAction(quit_act)
         return menu
 
     def _build_settings_menu(self, parent):
-        sub = parent.addMenu("Settings")
+        sub = parent.addMenu(tr("Settings"))
         sub.setStyleSheet(DARK_MENU_STYLE)
 
-        self.autostart_act = self._toggle_action(sub, "Start with Windows", self.on_autostart_toggled)
+        self.autostart_act = self._toggle_action(sub, tr("Start with Windows"), self.on_autostart_toggled)
         self.autostart_act.setChecked(app_settings.is_autostart_enabled())
 
-        self.left_click_act = self._toggle_action(
-            sub, "Left click toggles mute",
-            lambda checked: setattr(self.settings, "left_click_mute", checked))
-        self.left_click_act.setChecked(self.settings.left_click_mute)
-
         _, self.poll_group = self._choice_menu(
-            sub, "Battery refresh", app_settings.POLL_OPTIONS, self.on_poll_interval)
+            sub, tr("Battery refresh"), app_settings.POLL_OPTIONS, self.on_poll_interval)
         self._check_choice(self.poll_group, self.settings.poll_interval_s)
 
-        sub.addSeparator()
-        self._info_action(sub, f"Version {__version__}")
+        languages = [(code, tr(label) if code == i18n.AUTO else label) for code, label in i18n.LANGUAGES]
+        _, self.language_group = self._choice_menu(sub, tr("Language"), languages, self.on_language)
+        self._check_choice(self.language_group, self.settings.language)
 
-    def _build_advanced_menu(self, parent):
-        self.advanced_menu = parent.addMenu("Advanced")
-        self.advanced_menu.setStyleSheet(DARK_MENU_STYLE)
-        self.sirk_info = self._info_action(self.advanced_menu)
-        self.sirk_reset_act = QAction("Reset headset pairing (SIRK)...", self.advanced_menu)
-        self.sirk_reset_act.triggered.connect(self.on_reset_sirk)
-        self.advanced_menu.addAction(self.sirk_reset_act)
+        sub.addSeparator()
+        self._info_action(sub, tr("Version {}").format(__version__))
 
     def _choice_menu(self, parent, title, options, handler):
         sub = parent.addMenu(title)
@@ -159,77 +158,104 @@ class HeadsetApp(QObject):
             act.setChecked(False)
         group.setExclusive(True)
 
-    # --- handlers ---
+    # --- tray clicks and the panel ---
     def on_tray_activated(self, reason):
-        if (reason == QSystemTrayIcon.ActivationReason.Trigger
-                and self.settings.left_click_mute and self.state["connected"]):
-            self.worker.submit("muted", not self.state["muted"])
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            self.show_panel()
 
+    def _new_panel(self):
+        from panel import HeadsetPanel      # loaded on first use, keeps the start light
+        panel = HeadsetPanel(self)
+        panel.closed.connect(lambda: self._panel_closed(panel))
+        return panel
+
+    def _panel_closed(self, panel):
+        if self.panel is panel:
+            self.panel = None
+            QTimer.singleShot(TRIM_DELAY_MS, release_unused_memory)
+
+    def show_panel(self):
+        if self.panel is None:
+            self.panel = self._new_panel()
+        self.panel.show_panel()
+
+    def on_language(self, code):
+        """Switch the UI language: rebuild the menu and the panel in place."""
+        self.settings.language = code
+        i18n.set_language(code)
+        old_menu = self.menu
+        self.menu = self._build_menu()
+        self.tray.setContextMenu(self.menu)
+        old_menu.deleteLater()
+        self.sync_state(self.state)
+        if self.panel is not None:
+            old, visible = self.panel, self.panel.isVisible()
+            self.panel = self._new_panel()
+            self.panel.adopt(old)
+            old.shutdown()
+            old.hide()
+            old.deleteLater()
+            if visible:
+                self.panel.show_panel()
+
+    def sync_menu_settings(self):
+        """Tray menu checks after a setting changed in the panel."""
+        self.autostart_act.setChecked(app_settings.is_autostart_enabled())
+        self._check_choice(self.poll_group, self.settings.poll_interval_s)
+        self._check_choice(self.language_group, self.settings.language)
+
+    def _sync_panel_settings(self):
+        if self.panel is not None:
+            self.panel.sync_app_settings()
+
+    # --- settings ---
     def on_autostart_toggled(self, checked):
         try:
             app_settings.set_autostart(checked)
         except OSError as e:
             log.error("Cannot change autostart: %s", e)
         self.autostart_act.setChecked(app_settings.is_autostart_enabled())
-
-    def on_reset_sirk(self):
-        answer = QMessageBox.warning(
-            None, "Reset headset pairing",
-            "This resets the pairing key (SIRK) shared by the headset and the dongle.\n\n"
-            "The headset may disconnect from the dongle. If it does not reconnect, pair it "
-            "again following the headset manual.\n\n"
-            "This feature is experimental. Continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No)
-        if answer == QMessageBox.StandardButton.Yes:
-            log.info("User confirmed SIRK reset")
-            self.worker.submit("reset_sirk", None)
+        self._sync_panel_settings()
 
     def on_poll_interval(self, seconds):
         self.settings.poll_interval_s = seconds
         self.worker.poll_interval_s = seconds
+        self._sync_panel_settings()
 
     def on_quit(self):
+        if self.panel is not None:
+            self.panel.close()              # sends a change still waiting for its debounce
         self.estimate_timer.stop()
-        self.estimator.finish_session()  # keep what this session taught us
+        self.estimator.finish_session()     # keep what this session taught us
         self.worker.stop()
-        if not self.worker.wait(3000):
+        if not self.worker.wait(5000):
             log.warning("Worker did not stop in time")
         self.tray.hide()
         QApplication.quit()
 
     # --- state ---
+    def _status_text(self):
+        if not self.state["dongle"]:
+            return tr("Dongle not found")
+        if not self.state["connected"]:
+            return tr("Headset off / out of range")
+        return tr("Headset connected")
+
     def sync_state(self, state):
         self.state = state
         connected = state["connected"]
-        bat = state["battery"]
+        bat, charging = state["battery"], state["charging"]
 
-        if not state["dongle"]:
-            status = "Dongle not found"
-        elif not connected:
-            status = "Headset off / out of range"
-        else:
-            status = "Headset connected"
-        self.connection_info.setText(status)
-        self.battery_info.setText(f"Battery level: {bat}%" if bat is not None else "Battery level: ---")
-        self.charging_info.setText(f"Charging status: {state['charging'] or '---'}")
-
-        for act in (self.mute_act, self.side_tone_act):
-            act.setEnabled(connected)
-        self.vol_menu.setEnabled(connected)
-        self.shutdown_menu.setEnabled(connected)
-
-        sirk = state["sirk_reset_required"]
-        self.sirk_info.setText("Pairing reset required: " + ("---" if sirk is None else "Yes" if sirk else "No"))
-        self.sirk_reset_act.setEnabled(connected)
-
+        self.connection_info.setText(self._status_text())
+        self.battery_info.setText(tr("Battery level: {}").format(f"{bat}%" if bat is not None else "---"))
+        self.charging_info.setText(tr("Charging status: {}").format(tr(charging) if charging else "---"))
+        self.mute_act.setEnabled(connected)
         self.mute_act.setChecked(bool(state["muted"]))
-        self.side_tone_act.setChecked(bool(state["side_tone"]))
-        self._check_choice(self.vol_group, state["side_tone_vol"])
-        self._check_choice(self.shutdown_group, state["auto_shutdown"])
 
         self._update_icon()
         self._refresh_estimate()
+        if self.panel is not None:
+            self.panel.update_state(state)
 
     def _update_icon(self):
         state = self.state
@@ -248,17 +274,18 @@ class HeadsetApp(QObject):
         state = self.state
         bat, charging = state["battery"], state["charging"]
         self.estimator.update(bat, charging, state["connected"])
+        self.history.record(bat, charging, state["connected"])   # repeats a steady level now and then
         left = format_duration(self.estimator.hours_left(bat, charging))
-        self.estimate_info.setText(f"Estimated time left: {left}" if left else "")
+        self.estimate_info.setText(tr("Estimated time left: {}").format(left) if left else "")
         self.estimate_info.setVisible(left is not None)
 
         if bat is None:
             self.tray.setToolTip(self.connection_info.text())
             return
-        lines = [f"Battery level: {bat}%"]
+        lines = [tr("Battery level: {}").format(f"{bat}%")]
         if left:
-            lines.append(f"Time left: {left}")
-        lines.append(f"Charging status: {charging or '---'}")
+            lines.append(tr("Time left: {}").format(left))
+        lines.append(tr("Charging status: {}").format(tr(charging) if charging else "---"))
         if state["muted"]:
-            lines.append("Microphone muted")
+            lines.append(tr("Microphone muted"))
         self.tray.setToolTip("\n".join(lines))

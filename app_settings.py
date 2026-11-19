@@ -14,13 +14,16 @@ APP_NAME = "HyperTray"
 LEGACY_NAME = "HyperHeadset"  # name before 2.1; its settings are migrated once
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 # Battery refresh choices: (seconds, menu label). The original project polls
-# every 3 s, so 5 s is still safe for the dongle.
+# every 3 s, so 5 s is still safe for the dongle. Mute, charging and power
+# changes arrive as events anyway, so the poll only follows the slow drain.
 POLL_OPTIONS = (
     (5, "5 s"), (10, "10 s"), (30, "30 s"), (60, "1 min"),
     (120, "2 min"), (300, "5 min"), (600, "10 min"),
 )
 POLL_INTERVALS = tuple(seconds for seconds, _ in POLL_OPTIONS)
-DEFAULT_POLL_INTERVAL = 10
+DEFAULT_POLL_INTERVAL = 60
+OLD_DEFAULT_POLL_INTERVAL = 10   # default up to 2.1; moved to the new default once
+SETTINGS_VERSION = 2
 
 
 def data_dir():
@@ -72,17 +75,31 @@ def delete_settings_key(name):
             pass
 
 
+def migrate_settings():
+    """One-time changes of stored settings. Version 2: a battery refresh left
+    at the old 10 s default becomes 60 s (events make frequent polls pointless)."""
+    s = QSettings(APP_NAME, APP_NAME)
+    s.remove("left_click_mute")     # option removed: a click on the tray icon opens the panel
+    if s.value("settings_version", 1, type=int) >= SETTINGS_VERSION:
+        return
+    if s.value("poll_interval_s", None) is not None and s.value("poll_interval_s", type=int) == OLD_DEFAULT_POLL_INTERVAL:
+        s.setValue("poll_interval_s", DEFAULT_POLL_INTERVAL)
+        log.info("Battery refresh changed from %s s to %s s", OLD_DEFAULT_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+    s.setValue("settings_version", SETTINGS_VERSION)
+    s.sync()
+
+
 class AppSettings:
     def __init__(self):
         self._s = QSettings(APP_NAME, APP_NAME)
 
     @property
-    def left_click_mute(self):
-        return self._s.value("left_click_mute", True, type=bool)
+    def language(self):
+        return self._s.value("language", "auto", type=str)
 
-    @left_click_mute.setter
-    def left_click_mute(self, value):
-        self._s.setValue("left_click_mute", bool(value))
+    @language.setter
+    def language(self, code):
+        self._s.setValue("language", code)
 
     @property
     def poll_interval_s(self):

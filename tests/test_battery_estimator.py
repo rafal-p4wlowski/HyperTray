@@ -80,3 +80,47 @@ def test_corrupt_statistics_file_is_ignored(tmp_path):
 ])
 def test_format_duration(hours, text):
     assert format_duration(hours) == text
+
+
+# --- battery history (panel chart) ---
+
+from battery_estimator import HISTORY_REPEAT_S, BatteryHistory  # noqa: E402
+
+
+def test_history_records_changes_only(tmp_path):
+    path = tmp_path / "history.json"
+    h = BatteryHistory(str(path))
+    assert not h.record(None, None, False, now=0)              # nothing before the first reading
+    assert h.record(80, "Not charging", True, now=10)
+    assert not h.record(80, "Not charging", True, now=20)
+    assert h.record(79, "Not charging", True, now=30)
+    assert h.record(79, "Charging", True, now=40)
+    assert h.record(None, None, False, now=50)                 # headset off: a gap
+    assert not h.record(None, None, False, now=60 + HISTORY_REPEAT_S)
+    assert h.record(79, "Not charging", True, now=100)
+    assert h.record(79, "Not charging", True, now=100 + HISTORY_REPEAT_S)   # steady level repeated
+    assert [(b, c) for _, b, c in h.points] == [(80, False), (79, False), (79, True), (None, False),
+                                                (79, False), (79, False)]
+    assert BatteryHistory(str(path)).points == h.points        # survives a restart
+
+
+def test_history_keeps_seven_days(tmp_path):
+    h = BatteryHistory(str(tmp_path / "history.json"))
+    day = 86400
+    for i in range(10):
+        h.record(90 - i, "Not charging", True, now=i * day)
+    assert h.points[0][0] == day       # cutoff at day 2; the point before it stays (the line starts there)
+    assert [p[1] for p in h.since(5 * day + 1)] == [85, 84, 83, 82, 81]
+
+
+def test_history_ignores_a_broken_file(tmp_path):
+    path = tmp_path / "history.json"
+    path.write_text("{not json")
+    assert BatteryHistory(str(path)).points == []
+
+
+def test_history_loads_points_with_the_same_time(tmp_path):
+    """Headset off and on again within a second: saved times are equal, one level is None."""
+    path = tmp_path / "history.json"
+    path.write_text('{"points":[[100,40,0],[200,null,0],[200,38,0]]}')
+    assert BatteryHistory(str(path)).points == [(100, 40, False), (200, None, False), (200, 38, False)]

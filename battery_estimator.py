@@ -8,7 +8,6 @@ enough data.
 """
 import json
 import logging
-import os
 import time
 
 log = logging.getLogger(__name__)
@@ -115,6 +114,65 @@ class BatteryEstimator:
         if not rate:
             return None
         return battery / rate
+
+
+HISTORY_DAYS = 7
+HISTORY_REPEAT_S = 30 * 60   # store an unchanged level again after this long (shows the line is live)
+
+
+class BatteryHistory:
+    """Battery level over the last HISTORY_DAYS days for the panel chart.
+
+    Points are (unix time, level or None, charging) and are stored when
+    something changes; None marks the headset switched off, so the chart
+    leaves a gap there. Kept as JSON next to the learned rate.
+    """
+
+    def __init__(self, path=None):
+        self.path = path
+        self.points = self._load()
+
+    def _load(self):
+        if not self.path:
+            return []
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                points = [(float(t), None if b is None else int(b), bool(c)) for t, b, c in json.load(f)["points"]]
+        except (OSError, ValueError, KeyError, TypeError):
+            return []
+        return sorted(points, key=lambda p: p[0])   # by time only: a level may be None
+
+    def _save(self):
+        if not self.path:
+            return
+        try:
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump({"points": [[round(t), b, int(c)] for t, b, c in self.points]}, f, separators=(",", ":"))
+        except OSError as e:
+            log.warning("Cannot save battery history: %s", e)
+
+    def record(self, battery, charging, connected, now=None):
+        """Store the state if it differs from the last point. Returns whether it did."""
+        now = time.time() if now is None else now
+        level = battery if connected else None
+        charging = level is not None and charging in CHARGING_STATES
+        if self.points:
+            t, last_level, last_charging = self.points[-1]
+            if (level, charging) == (last_level, last_charging) and (level is None or now - t < HISTORY_REPEAT_S):
+                return False
+        elif level is None:
+            return False                    # nothing to show yet
+        self.points.append((now, level, charging))
+        cutoff = now - HISTORY_DAYS * 86400
+        while len(self.points) > 1 and self.points[1][0] < cutoff:
+            self.points.pop(0)
+        self._save()
+        return True
+
+    def since(self, start):
+        """Points from `start` on, preceded by the last one before it (where the line comes from)."""
+        before = [p for p in self.points if p[0] < start][-1:]
+        return before + [p for p in self.points if p[0] >= start]
 
 
 def format_duration(hours):

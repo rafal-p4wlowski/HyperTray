@@ -89,3 +89,39 @@ def test_nothing_to_migrate(names, tmp_path):
     app_settings.migrate_legacy()
     assert run_value(run_key, new) is None
     assert not os.path.exists(tmp_path / new)
+
+
+def test_old_default_poll_interval_moves_to_60s(names):
+    _, new, _ = names
+    s = QSettings(new, new)
+    s.setValue("poll_interval_s", 10)
+    s.sync()
+    app_settings.migrate_settings()
+    assert app_settings.AppSettings().poll_interval_s == 60
+    s.setValue("poll_interval_s", 10)                       # chosen again by the user later: kept
+    s.sync()
+    app_settings.migrate_settings()
+    assert app_settings.AppSettings().poll_interval_s == 10
+
+
+def test_other_poll_interval_is_kept(names):
+    _, new, _ = names
+    s = QSettings(new, new)
+    s.setValue("poll_interval_s", 30)
+    s.sync()
+    app_settings.migrate_settings()
+    assert app_settings.AppSettings().poll_interval_s == 30
+
+
+def test_new_install_gets_60s(names):
+    app_settings.migrate_settings()
+    assert app_settings.AppSettings().poll_interval_s == 60
+
+
+def test_left_click_mute_option_is_removed(names):
+    _, new, _ = names
+    s = QSettings(new, new)
+    s.setValue("left_click_mute", True)
+    s.sync()
+    app_settings.migrate_settings()
+    assert QSettings(new, new).value("left_click_mute") is None

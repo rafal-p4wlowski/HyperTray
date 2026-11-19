@@ -15,13 +15,23 @@ INITIAL_STATE = {
     "dongle": False,       # dongle found and opened
     "connected": False,    # headset switched on and linked to the dongle
     "battery": None,
+    "voltage_mv": None,
     "charging": None,
     "muted": None,
+    "mic_connected": None,
     "side_tone": None,
     "side_tone_vol": None,
+    "silent": None,
     "auto_shutdown": None,
     "sirk_reset_required": None,
+    "color": None,
+    "model": None,
+    "headset_pid": None,
+    "headset_firmware": None,
+    "dongle_firmware": None,
 }
+# Only meaningful while the headset is linked.
+LIVE_KEYS = ("battery", "voltage_mv", "charging")
 
 
 class HeadsetWorker(QThread):
@@ -29,21 +39,37 @@ class HeadsetWorker(QThread):
     only sends requests through submit() and receives state_changed."""
 
     state_changed = pyqtSignal(dict)
+    busy_changed = pyqtSignal(bool)      # commands queued or running
 
-    def __init__(self, protocol, poll_interval_s=10):
+    def __init__(self, protocol, poll_interval_s=60):
         super().__init__()
         self.hl = protocol
         # Battery poll interval (or wireless status while the headset is off).
         # Plain attribute: written by the GUI thread, read here.
         self.poll_interval_s = poll_interval_s
         self._commands = queue.Queue()
+        self._pending = 0
+        self._pending_lock = threading.Lock()
         self._stop = threading.Event()
-        self._refresh_needed = False  # set when the headset (re)connects
+        self._refresh_needed = False  # set when the headset (re)connects or on request
         self.state = dict(INITIAL_STATE)
 
     # Called from the GUI thread.
     def submit(self, setting, value):
+        with self._pending_lock:
+            self._pending += 1
+            first = self._pending == 1
+        if first:
+            self.busy_changed.emit(True)
         self._commands.put((setting, value))
+
+    def request_refresh(self):
+        """Read every setting again (the panel's Reload button)."""
+        self._refresh_needed = True
+
+    @property
+    def busy(self):
+        return self._pending > 0
 
     def stop(self):
         self._stop.set()
@@ -54,10 +80,11 @@ class HeadsetWorker(QThread):
             while not self._stop.is_set():
                 headset = self.hl.Headset.connect()
                 if headset is None:
+                    self._drop_pending_commands()
                     self._apply(dict(INITIAL_STATE))
                     self._stop.wait(RECONNECT_INTERVAL_S)
                     continue
-                self._apply({"dongle": True})
+                self._apply({"dongle": True, "dongle_firmware": headset.dongle_firmware})
                 try:
                     self._serve(headset)
                 except self.hl.HeadsetError as e:
@@ -114,12 +141,36 @@ class HeadsetWorker(QThread):
                 setting, value = self._commands.get_nowait()
             except queue.Empty:
                 return
-            if setting == "reset_sirk":
-                self._apply(headset.reset_sirk())
-                log.info("SIRK reset done, reset required now: %s", self.state["sirk_reset_required"])
-                continue
-            log.info("Setting %s = %s", setting, value)
+            try:
+                self._run_command(headset, setting, value)
+            finally:
+                self._command_done()
+
+    def _run_command(self, headset, setting, value):
+        if not self.state["connected"]:
+            log.info("Headset off, dropping %s = %s", setting, value)
+            return
+        if setting == "reset_sirk":
+            self._apply(headset.reset_sirk())
+            log.info("SIRK reset done, reset required now: %s", self.state["sirk_reset_required"])
+            return
+        if self.state.get(setting) == value:
+            return                  # the headset would not confirm a write of the current value
+        log.info("Setting %s = %s", setting, value)
+        try:
             self._apply(headset.apply_setting(setting, value))
+        except ValueError as e:
+            log.warning("Not sent: %s", e)
+            return
+        if self.state.get(setting) != value:
+            log.warning("Headset kept %s = %s instead of %s", setting, self.state.get(setting), value)
+
+    def _command_done(self):
+        with self._pending_lock:
+            self._pending -= 1
+            idle = self._pending == 0
+        if idle:
+            self.busy_changed.emit(False)
 
     def _drop_pending_commands(self):
         while True:
@@ -127,6 +178,7 @@ class HeadsetWorker(QThread):
                 self._commands.get_nowait()
             except queue.Empty:
                 return
+            self._command_done()
 
     def _apply(self, updates):
         """Apply a dict of updates, or a list of them in order."""
@@ -141,8 +193,8 @@ class HeadsetWorker(QThread):
         if updates.get("battery") is not None:  # only a linked headset reports a battery level
             new["connected"] = True
         if not new["connected"]:
-            new["battery"] = None
-            new["charging"] = None
+            for key in LIVE_KEYS:
+                new[key] = None
         if new != self.state:
             if new["sirk_reset_required"] != self.state["sirk_reset_required"] and new["sirk_reset_required"] is not None:
                 log.info("Pairing key (SIRK) reset required: %s", new["sirk_reset_required"])
